@@ -33,7 +33,15 @@ dict_symbols = {'C' :'yo',
                 'A2B':'c^',
                 'P'  :'r^'}
 
-def isreaction(typ1, typ2):
+reactionsets = [{'C'  ,'A' },
+                {'C'  ,'AB'},
+                {'CB' ,'A' },
+                {'CB' ,'AB'},
+                {'C2B','A' },
+                {'C2B','AB'},
+                {'P'  ,'A' }]
+
+def isreactionold(typ1, typ2):
     if typ1 in ['C3B','A2B']:
         return False
         
@@ -73,6 +81,13 @@ def isreaction(typ1, typ2):
             return True
         else:
             return False
+
+def isreaction(typ1, typ2):
+    sett = {typ1, typ2}
+    if sett in reactionsets:
+        return True
+    else:
+        return False
     
     
 
@@ -87,6 +102,7 @@ typUNreactivenodes = ['A2B','C3B']
 
 
 def plot(ax, setofnodes, listofbonds, dictattributes, bool_test = False):
+    ax.cla()
     for bond in listofbonds:
         [node1, node2] = bond
         [x1, y1] = mkg.getposition(node1)
@@ -102,13 +118,59 @@ def plot(ax, setofnodes, listofbonds, dictattributes, bool_test = False):
                 [xn, yn] = mkg.getposition(neighbour)
                 ax.plot([x, xn], [y, yn], color = 'black')
 
+def plotpores(ax, listofpores):
+    for pore in listofpores:
+        porepos = [mkg.getcellposition(p) for p in pore]
+        x = [p[0] for p in porepos]
+        y = [p[1] for p in porepos]
+        ax.plot(x, y, 'ro')
+        ax.plot(x, y, 'r--')
 
+def getopenborders(cell, listofbonds):
+    cellborders = mkg.getcellbonds(cell) #get the bonds surrounding that cell
+    openborders = [bond for bond in cellborders if bond not in listofbonds]#Select only those borders that don't have bonds 
+    return openborders
+    
+def tracepore(pore, nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells):
+    print nopbor
+    cell = pore[-1]
+    openborders = getopenborders(cell, listofbonds)
+    for bond in openborders:
+        edgecellpair = mkg.getedgeneighbours(bond)
+        cellnew = edgecellpair.difference(set(pore))
+        if len(cellnew) == 1:
+            cellnew = list(cellnew)[0]
+            if cellnew not in setoftraversedcells:
+                pore.append(cellnew)
+                setoftraversedcells.add(cellnew)
+                openborders = getopenborders(cellnew, listofbonds)
+                nopbor = max([nopbor, len(openborders)])
+                if len(openborders) < 6:
+                    pore, nopbor = tracepore(pore, nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells)
+    return pore, nopbor
+    
+def getpores(setofnodes, listofbonds):
+    setofcells = mkg.getcells(setofnodes)
+    listofpores = [] 
+    setoftraversedcells = set([])
+    for cell in setofcells:
+        setoftraversedcells.add(cell)
+        openborders = getopenborders(cell, listofbonds)
+        nopbor = len(openborders)
+        pore, nopbor = tracepore([cell], nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells)
+        cell = pore[-1]
+        openborders = getopenborders(cell, listofbonds)
+        if nopbor < 6:   
+            listofpores.append(pore)
+    return listofpores
+        
             
 class Simulation:
     def __init__(self):
         pos0 = (0,0,0)
         self.setofnodes = {pos0}
         self.listofbonds = []
+        
         self.setofreactivenodes = {pos0}
         self.dict_attributes = {pos0:['C',set([])]} #First attribute is type, second is set of bonded neighbours
         self.setofbordernodes = set(mkg.getneighbours(pos0))
@@ -229,8 +291,10 @@ class Simulation:
             self.internalreact()
             self.react(p)
         self.cure()
+        self.listofpores = getpores(self.setofnodes, self.listofbonds)
         if boolplot:
             plot(self.ax, self.setofnodes, self.listofbonds, self.dict_attributes)
+            plotpores(self.ax, self.listofpores)
             self.fig.canvas.draw()
         
 if __name__ == "__main__":
