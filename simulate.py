@@ -126,56 +126,63 @@ def plotpores(ax, listofpores):
         ax.plot(x, y, 'ro')
         ax.plot(x, y, 'r--')
 
-def getopenborders(cell, listofbonds):
-    cellborders = mkg.getcellbonds(cell) #get the bonds surrounding that cell
-    openborders = [bond for bond in cellborders if bond not in listofbonds]#Select only those borders that don't have bonds 
-    return openborders
-    
-def tracepore(pore, nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells):
-    print nopbor
-    cell = pore[-1]
-    openborders = getopenborders(cell, listofbonds)
-    for bond in openborders:
-        edgecellpair = mkg.getedgeneighbours(bond)
-        cellnew = edgecellpair.difference(set(pore))
-        if len(cellnew) == 1:
-            cellnew = list(cellnew)[0]
-            if cellnew not in setoftraversedcells:
-                pore.append(cellnew)
-                setoftraversedcells.add(cellnew)
-                openborders = getopenborders(cellnew, listofbonds)
-                nopbor = max([nopbor, len(openborders)])
-                if len(openborders) < 6:
-                    pore, nopbor = tracepore(pore, nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells)
-    return pore, nopbor
+def getopenneighbours(cell, listofbonds, maxx, maxy):
+    neighbours = mkg.getcellneighbours(cell)
+    openneighbours = set([])
+    boolborder = False
+    for neighbour in neighbours:
+        x, y = mkg.getcellposition(neighbour)
+        if abs(x) > maxx or abs(y) > maxy:
+            boolborder = True
+        bond = mkg.getedge(cell, neighbour)
+        if bond not in listofbonds:
+            openneighbours.add(neighbour)
+    return openneighbours, boolborder
+
     
 def getpores(setofnodes, listofbonds):
-    setofcells = mkg.getcells(setofnodes)
+    setofcells, maxx, maxy = mkg.getcells(setofnodes)
     listofpores = [] 
     setoftraversedcells = set([])
     for cell in setofcells:
-        setoftraversedcells.add(cell)
-        openborders = getopenborders(cell, listofbonds)
-        nopbor = len(openborders)
-        pore, nopbor = tracepore([cell], nopbor, setofnodes, listofbonds, setofcells, setoftraversedcells)
-        cell = pore[-1]
-        openborders = getopenborders(cell, listofbonds)
-        if nopbor < 6:   
-            listofpores.append(pore)
+        if cell not in setoftraversedcells:
+            boolstop = False
+            pore = set([cell])
+            setofbordercells = set([cell])
+            while not boolstop:
+                newsetofbordercells = setofbordercells.union(set([]))
+                for bordercell in setofbordercells:
+                    openneighbours, boolborder = getopenneighbours(bordercell, listofbonds,maxx, maxy)
+                    if not boolstop:
+                        pore.add(bordercell)
+                        newsetofbordercells = newsetofbordercells.union(openneighbours).difference(pore)
+                        
+                    if boolborder:
+                        boolstop = True
+                        break
+                setofbordercells = newsetofbordercells.difference(pore)
+                if len(setofbordercells) == 0:
+                    boolstop = True
+            setoftraversedcells = setoftraversedcells.union(pore)     
+            if not boolborder:
+                listofpores.append(pore)          
     return listofpores
         
             
 class Simulation:
-    def __init__(self):
+    def __init__(self, p, niter):
+        self.p = p
+        self.niter = niter              
         pos0 = (0,0,0)
         self.setofnodes = {pos0}
-        self.listofbonds = []
-        
+        self.listofbonds = []  
         self.setofreactivenodes = {pos0}
         self.dict_attributes = {pos0:['C',set([])]} #First attribute is type, second is set of bonded neighbours
         self.setofbordernodes = set(mkg.getneighbours(pos0))
         self.fig = plt.figure()
         self.ax = self.fig.add_subplot(111)
+        self.cid = self.fig.canvas.mpl_connect('button_press_event',self.on_click)
+        self.did = self.fig.canvas.mpl_connect('key_press_event', self.on_press)
     def addreactant(self, p, boolplot=False): #p is probability of getting an amine
         r = rnd()
         if r < p:
@@ -296,9 +303,21 @@ class Simulation:
             plot(self.ax, self.setofnodes, self.listofbonds, self.dict_attributes)
             plotpores(self.ax, self.listofpores)
             self.fig.canvas.draw()
+    def on_press(self, event):
+        self.simulate(self.p, n=self.niter,boolplot = True)
+    def on_click(self, event):
+        if event.inaxes != self.ax: return
+        x = event.xdata
+        y = event.ydata 
+        (i,j) = mkg.getindex([x,y])
+        self.ax.title.set_text('(%d,%d)'%(i,j))
+        self.fig.canvas.draw()
+        return
+        
+        
         
 if __name__ == "__main__":
-    sim = Simulation()
+    sim = Simulation(0.6, 10000)
 
 
  
