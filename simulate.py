@@ -101,9 +101,9 @@ dict_transform = {'C'  :'CB'  ,
 typUNreactivenodes = ['A2B','C3B']
 
 
-def plot(ax, setofnodes, listofbonds, dictattributes, bool_test = False):
+def plot(ax, setofnodes, setofbonds, dictattributes, bool_test = False):
     ax.cla()
-    for bond in listofbonds:
+    for bond in setofbonds:
         [node1, node2] = bond
         [x1, y1] = mkg.getposition(node1)
         [x2, y2] = mkg.getposition(node2)
@@ -118,55 +118,6 @@ def plot(ax, setofnodes, listofbonds, dictattributes, bool_test = False):
                 [xn, yn] = mkg.getposition(neighbour)
                 ax.plot([x, xn], [y, yn], color = 'black')
 
-def plotpores(ax, listofpores):
-    for pore in listofpores:
-        porepos = [mkg.getcellposition(p) for p in pore]
-        x = [p[0] for p in porepos]
-        y = [p[1] for p in porepos]
-        ax.plot(x, y, 'ro')
-        ax.plot(x, y, 'r--')
-
-def getopenneighbours(cell, listofbonds, maxx, maxy):
-    neighbours = mkg.getcellneighbours(cell)
-    openneighbours = set([])
-    boolborder = False
-    for neighbour in neighbours:
-        x, y = mkg.getcellposition(neighbour)
-        if abs(x) > maxx or abs(y) > maxy:
-            boolborder = True
-        bond = mkg.getedge(cell, neighbour)
-        if bond not in listofbonds:
-            openneighbours.add(neighbour)
-    return openneighbours, boolborder
-
-    
-def getpores(setofnodes, listofbonds):
-    setofcells, maxx, maxy = mkg.getcells(setofnodes)
-    listofpores = [] 
-    setoftraversedcells = set([])
-    for cell in setofcells:
-        if cell not in setoftraversedcells:
-            boolstop = False
-            pore = set([cell])
-            setofbordercells = set([cell])
-            while not boolstop:
-                newsetofbordercells = setofbordercells.union(set([]))
-                for bordercell in setofbordercells:
-                    openneighbours, boolborder = getopenneighbours(bordercell, listofbonds,maxx, maxy)
-                    if not boolstop:
-                        pore.add(bordercell)
-                        newsetofbordercells = newsetofbordercells.union(openneighbours).difference(pore)
-                        
-                    if boolborder:
-                        boolstop = True
-                        break
-                setofbordercells = newsetofbordercells.difference(pore)
-                if len(setofbordercells) == 0:
-                    boolstop = True
-            setoftraversedcells = setoftraversedcells.union(pore)     
-            if not boolborder:
-                listofpores.append(pore)          
-    return listofpores
         
             
 class Simulation:
@@ -175,7 +126,7 @@ class Simulation:
         self.niter = niter              
         pos0 = (0,0,0)
         self.setofnodes = {pos0}
-        self.listofbonds = []  
+        self.setofbonds = set([]) 
         self.setofreactivenodes = {pos0}
         self.dict_attributes = {pos0:['C',set([])]} #First attribute is type, second is set of bonded neighbours
         self.setofbordernodes = set(mkg.getneighbours(pos0))
@@ -231,9 +182,8 @@ class Simulation:
                             if typneighbourtrans in typUNreactivenodes:
                                 self.setofreactivenodes.remove(reactiveneighbour)
                             
-                            bond = {reactnode, reactiveneighbour}
-                            if bond not in self.listofbonds:
-                                self.listofbonds.append(bond)
+                            bond = frozenset([reactnode, reactiveneighbour])
+                            self.setofbonds.add(bond)
     
                             break
                 if boolreaction:
@@ -262,9 +212,8 @@ class Simulation:
 
         if booladd:
             self.dict_attributes[reactnode][1].add(node) #New node added to list of bonded neighbours of reacted node
-            bond = {reactnode, node}
-            if bond not in self.listofbonds:
-                self.listofbonds.append(bond)
+            bond = frozenset([reactnode, node])
+            self.setofbonds.add(bond)
                 
             self.setofbordernodes.remove(node) #Border node removed from set of border nodes
             self.setofnodes.add(node) #Node added to set of nodes
@@ -292,17 +241,26 @@ class Simulation:
             if typ == 'P':
                 attr[0] = 'AB'
         self.internalreact()
-    
+    def plot(self):
+        self.ax.cla()
+        plot(self.ax, self.setofnodes, self.setofbonds, self.dict_attributes)
+        self.fig.canvas.draw()
     def simulate(self, p, n=10, boolplot = False):
         for i in xrange(n):
             self.internalreact()
             self.react(p)
+            if i%1000 == 0:
+                print '%d trials done. %d nodes set.'%(i, len(self.setofnodes))
+        print 'Curing.'
         self.cure()
-        self.listofpores = getpores(self.setofnodes, self.listofbonds)
+        print 'Getting pores'
+        self.listofpores = mkg.getpores(self.setofnodes, self.setofbonds)
+        print 'There are %d pores.'%(len(self.listofpores))
         if boolplot:
-            plot(self.ax, self.setofnodes, self.listofbonds, self.dict_attributes)
-            plotpores(self.ax, self.listofpores)
-            self.fig.canvas.draw()
+            print 'Plotting ...'
+            self.plot()
+            print 'Done!'
+        
     def on_press(self, event):
         self.simulate(self.p, n=self.niter,boolplot = True)
     def on_click(self, event):
@@ -317,7 +275,7 @@ class Simulation:
         
         
 if __name__ == "__main__":
-    sim = Simulation(0.6, 10000)
+    sim = Simulation(0.6, 1000)
 
 
  

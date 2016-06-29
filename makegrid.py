@@ -9,6 +9,7 @@ import scipy.linalg
 import matplotlib.pyplot as plt
 
 def getneighbours(pos):
+    #Neighbours of nodes
     [i, j, k] = pos  #Left = 0 and Right = 1
     kn = 0 if k == 1 else 1
     if kn == 0:
@@ -41,13 +42,13 @@ def getcellneighbours(pos):
     
 def getcellbonds(pos):
     [i, j] = pos
-    bond1 = {(i  ,j  ,0),(i  ,j  ,1)}
-    bond2 = {(i-1,j+2,0),(i-1,j+2,1)}
-    bond3 = {(i  ,j  ,0),(i-1,j+1,1)}
-    bond4 = {(i  ,j  ,1),(i  ,j+1,0)}
-    bond5 = {(i-1,j+2,0),(i-1,j+1,1)}
-    bond6 = {(i-1,j+2,1),(i  ,j+1,0)}
-    return [bond1, bond2, bond3, bond4, bond5, bond6]
+    bond1 = frozenset([(i  ,j  ,0),(i  ,j  ,1)])
+    bond2 = frozenset([(i-1,j+2,0),(i-1,j+2,1)])
+    bond3 = frozenset([(i  ,j  ,0),(i-1,j+1,1)])
+    bond4 = frozenset([(i  ,j  ,1),(i  ,j+1,0)])
+    bond5 = frozenset([(i-1,j+2,0),(i-1,j+1,1)])
+    bond6 = frozenset([(i-1,j+2,1),(i  ,j+1,0)])
+    return {bond1, bond2, bond3, bond4, bond5, bond6}
     
 def getedge(cell1, cell2):
     #get the edge shared by the two cells
@@ -137,5 +138,103 @@ def getindex(position):
         setofbordercells = newsetofbordercells.difference(setoftraversedcells)
     return cell
 
-        
+def getporeborderbonds(pore):
+    setofborderbonds, setofinnerbonds, setofbordernodes, setofporenodes = set([]), set([]), set([]), set([])
+    setoftraversedbonds = set([])
+    for cell in pore:
+        setofcellbonds = getcellbonds(cell).difference(setoftraversedbonds)
+        for bond in setofcellbonds:
+            setoftraversedbonds.add(bond)
+            setofedgeneighbours = getedgeneighbours(bond).difference(pore)
+            if len(setofedgeneighbours) == 1:
+                setofborderbonds.add(bond)
+                [node1, node2] = bond
+                setofbordernodes.add(node1)
+                setofbordernodes.add(node2)
+            else:
+                [node1, node2] = bond                
+                setofporenodes.add(node1)
+                setofporenodes.add(node2)
+            if len(setofedgeneighbours) == 0:
+                setofinnerbonds.add(bond)
+    setofporenodes = setofporenodes.difference(setofbordernodes)
+    return setofborderbonds, setofinnerbonds, setofbordernodes, setofporenodes
+            
+#def getborderpositions(setofborderbonds):
+         
     
+    
+
+def plotpores(ax, listofpores, setofbonds):
+    for pore in listofpores:
+        porepos = [getcellposition(p) for p in pore]
+        x = [p[0] for p in porepos]
+        y = [p[1] for p in porepos]
+        ax.plot(x, y, 'ro')
+        for cell in pore:
+            setofcellbonds = getcellbonds(cell).intersection(setofbonds)
+            for bond in setofcellbonds:
+                node1, node2 = bond
+                [x1, y1] = getposition(node1)
+                [x2, y2] = getposition(node2)
+                ax.plot([x1, x2],[y1, y2], 'k')
+        setofborderbonds, setofinnerbonds, setofbordernodes, setofporenodes = getporeborderbonds(pore)
+        for bond in setofborderbonds:
+            node1, node2 = bond
+            [x1, y1] = getposition(node1)
+            [x2, y2] = getposition(node2)
+            ax.plot([x1, x2],[y1, y2], color = 'blue', linewidth = 2.0, alpha = 0.5)            
+        for bond in setofinnerbonds:
+            node1, node2 = bond
+            [x1, y1] = getposition(node1)
+            [x2, y2] = getposition(node2)
+            ax.plot([x1, x2],[y1, y2], color = 'cyan', linewidth = 2.0, alpha = 0.5)
+        for node in setofbordernodes:
+            [x, y] = getposition(node)
+            ax.plot([x],[y],'bs')
+        for node in setofporenodes:
+            [x, y] = getposition(node)
+            ax.plot([x],[y], 'bo')
+        
+def getopenneighbours(cell, setofbonds, maxx, maxy):
+    neighbours = getcellneighbours(cell)
+    openneighbours = set([])
+    boolborder = False
+    for neighbour in neighbours:
+        x, y = getcellposition(neighbour)
+        if abs(x) > maxx or abs(y) > maxy:
+            boolborder = True
+        bond = getedge(cell, neighbour)
+        if bond not in setofbonds:
+            openneighbours.add(neighbour)
+    return openneighbours, boolborder
+
+    
+def getpores(setofnodes, setofbonds):
+    setofcells, maxx, maxy = getcells(setofnodes)
+    listofpores = [] 
+    setoftraversedcells = set([])
+    for cell in setofcells:
+        if cell not in setoftraversedcells:
+            boolstop = False
+            pore = set([cell])
+            setofbordercells = set([cell])
+            while not boolstop:
+                newsetofbordercells = setofbordercells.union(set([]))
+                for bordercell in setofbordercells:
+                    openneighbours, boolborder = getopenneighbours(bordercell, setofbonds,maxx, maxy)
+                    if not boolstop:
+                        pore.add(bordercell)
+                        newsetofbordercells = newsetofbordercells.union(openneighbours).difference(pore)
+                        
+                    if boolborder:
+                        boolstop = True
+                        break
+                setofbordercells = newsetofbordercells.difference(pore)
+                if len(setofbordercells) == 0:
+                    boolstop = True
+            setoftraversedcells = setoftraversedcells.union(pore)     
+            if not boolborder:
+                listofpores.append(pore)          
+    return listofpores
+
